@@ -1,0 +1,11 @@
+# Planning artifacts stay local unless explicitly selected for a future commit.
+specs/
+
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
