@@ -705,3 +705,299 @@ h4 { font-size: 0.95rem; }
   border: 1px solid var(--color-low-border);
   color: var(--color-low);
 }
+
+/* ============================================================
+   Public Product Website Styles (8Layers / Infrawatch / Grego AI inspired)
+   ============================================================ */
+.public-nav {
+  height: 68px;
+  background: rgba(9, 13, 22, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-8);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.public-nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  list-style: none;
+}
+.public-nav-link {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-2);
+  transition: var(--transition);
+}
+.public-nav-link:hover {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.public-hero {
+  padding: var(--space-16) var(--space-8) var(--space-12);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(37, 99, 235, 0.15), transparent 70%);
+}
+.public-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-hover);
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-accent-hover);
+  margin-bottom: var(--space-6);
+  box-shadow: 0 0 16px rgba(37, 99, 235, 0.1);
+}
+.public-hero-title {
+  font-size: 3.2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  max-width: 900px;
+  margin: 0 auto var(--space-6);
+  color: #fff;
+}
+.public-hero-title span {
+  background: linear-gradient(135deg, #60a5fa 20%, #a855f7 80%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.public-hero-desc {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  color: var(--color-text-2);
+  max-width: 680px;
+  margin: 0 auto var(--space-8);
+}
+.public-hero-ctas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-12);
+}
+
+/* Interactive Product Composition Visual in Hero */
+.hero-product-frame {
+  max-width: 1140px;
+  margin: 0 auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-hover);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 30px rgba(37, 99, 235, 0.08);
+  overflow: hidden;
+  text-align: left;
+}
+.hero-product-header {
+  height: 42px;
+  background: var(--color-surface-2);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+}
+.window-dots {
+  display: flex;
+  gap: 6px;
+}
+.window-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #334155;
+}
+
+/* Bento Grid */
+.bento-section {
+  padding: var(--space-16) var(--space-8);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.bento-header {
+  text-align: center;
+  max-width: 700px;
+  margin: 0 auto var(--space-12);
+}
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: var(--space-5);
+}
+.bento-cell-4 { grid-column: span 4; }
+.bento-cell-6 { grid-column: span 6; }
+.bento-cell-8 { grid-column: span 8; }
+.bento-cell-12 { grid-column: span 12; }
+
+@media (max-width: 900px) {
+  .bento-cell-4, .bento-cell-6, .bento-cell-8 {
+    grid-column: span 12;
+  }
+  .public-hero-title {
+    font-size: 2.2rem;
+  }
+}
+
+.bento-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+}
+.bento-card:hover {
+  border-color: var(--color-border-hover);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.bento-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  background: var(--color-accent-dim);
+  border: 1px solid var(--color-accent-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  margin-bottom: var(--space-4);
+  color: var(--color-accent-hover);
+}
+.bento-card__title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  color: #fff;
+}
+.bento-card__desc {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text-2);
+  margin-bottom: var(--space-4);
+}
+
+/* Workflow Flowchart */
+.workflow-track {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
+.workflow-step-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  position: relative;
+}
+.workflow-step-num {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-accent-hover);
+  margin-bottom: var(--space-2);
+}
+
+/* FAQ Card */
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
+.faq-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+}
+.faq-card h4 {
+  font-size: 1rem;
+  margin-bottom: var(--space-2);
+  color: #fff;
+}
+.faq-card p {
+  font-size: 0.875rem;
+  color: var(--color-text-2);
+  line-height: 1.6;
+}
+
+/* Public Footer */
+.public-footer {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-12) var(--space-8) var(--space-8);
+  background: var(--color-surface);
+  margin-top: var(--space-16);
+}
+.public-footer-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+/* Candidate Portal Multi-Step Progress */
+.candidate-step-tracker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  background: #fff;
+  border: 1px solid var(--color-candidate-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-6);
+}
+.candidate-step-node {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #64748b;
+}
+.candidate-step-node.active {
+  color: var(--color-candidate-accent);
+  font-weight: 700;
+}
+.candidate-step-node.completed {
+  color: #10b981;
+}
+.candidate-step-circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: #e2e8f0;
+  color: #475569;
+}
+.candidate-step-node.active .candidate-step-circle {
+  background: var(--color-candidate-accent);
+  color: #fff;
+}
+.candidate-step-node.completed .candidate-step-circle {
+  background: #10b981;
+  color: #fff;
+}
+
