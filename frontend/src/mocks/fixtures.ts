@@ -1,7 +1,7 @@
 /**
- * Deterministic fixture data for the IntegrityAI MVP demo.
- * All signals are simulated: true and explicitly labelled.
- * IDs are stable so tests and UI can reference them predictably.
+ * Deterministic fixture data for the IntegrityAI prototype.
+ * All signals are observation telemetry with explicit limitations.
+ * IDs are stable for reproducible testing and demonstration.
  */
 
 import type {
@@ -24,17 +24,26 @@ export const DEMO_ASSESSMENTS: Assessment[] = [
   },
   {
     id: 'assessment-002',
-    title: 'Data Structures Midterm — Batch B',
+    title: 'Data Structures & Algorithms Midterm — Batch B',
     status: 'completed',
     scheduledAt: '2026-10-15T14:00:00Z',
     durationMinutes: 60,
   },
+  {
+    id: 'assessment-003',
+    title: 'Cloud Infrastructure & Security Certification',
+    status: 'scheduled',
+    scheduledAt: '2026-11-02T10:00:00Z',
+    durationMinutes: 120,
+  },
 ]
 
 export const DEMO_CANDIDATES: Candidate[] = [
-  { id: 'candidate-001', displayName: 'Alex R.', assessmentId: 'assessment-001' },
-  { id: 'candidate-002', displayName: 'Sam K.', assessmentId: 'assessment-001' },
-  { id: 'candidate-003', displayName: 'Jordan P.', assessmentId: 'assessment-002' },
+  { id: 'candidate-001', displayName: 'Alex Rivera (ST-8921)', assessmentId: 'assessment-001' },
+  { id: 'candidate-002', displayName: 'Samantha Kowalski (ST-8934)', assessmentId: 'assessment-001' },
+  { id: 'candidate-003', displayName: 'Jordan Patel (ST-8712)', assessmentId: 'assessment-002' },
+  { id: 'candidate-004', displayName: 'Taylor Morgan (ST-8945)', assessmentId: 'assessment-001' },
+  { id: 'candidate-005', displayName: 'Morgan Lin (ST-8729)', assessmentId: 'assessment-002' },
 ]
 
 export const DEMO_SESSIONS: Session[] = [
@@ -62,6 +71,22 @@ export const DEMO_SESSIONS: Session[] = [
     startedAt: '2026-10-15T14:10:00Z',
     readiness: 'ready',
   },
+  {
+    id: 'session-004',
+    assessmentId: 'assessment-001',
+    candidateId: 'candidate-004',
+    status: 'flagged',
+    startedAt: '2026-10-20T09:12:00Z',
+    readiness: 'ready',
+  },
+  {
+    id: 'session-005',
+    assessmentId: 'assessment-002',
+    candidateId: 'candidate-005',
+    status: 'submitted',
+    startedAt: '2026-10-15T14:08:00Z',
+    readiness: 'ready',
+  },
 ]
 
 export const DEMO_SIGNALS: Signal[] = [
@@ -75,10 +100,8 @@ export const DEMO_SIGNALS: Signal[] = [
     occurredAt: '2026-10-20T09:18:30Z',
     recordedAt: '2026-10-20T09:18:31Z',
     sequence: 1,
-    explanation:
-      'The browser document lost focus. This observation was generated automatically by the demo environment.',
-    limitations:
-      'Browser focus events occur on any Alt+Tab, notification, or secondary monitor interaction. This observation does not indicate misconduct.',
+    explanation: 'Assessment document lost focus for 14 seconds.',
+    limitations: 'Focus loss events trigger on OS notifications, window switching, or assistive aids. Does not prove improper resource access.',
     simulated: true,
     requiresHumanReview: true,
   },
@@ -92,10 +115,8 @@ export const DEMO_SIGNALS: Signal[] = [
     occurredAt: '2026-10-20T09:22:10Z',
     recordedAt: '2026-10-20T09:22:11Z',
     sequence: 2,
-    explanation:
-      'A new browser tab was opened during the session window. This observation was generated automatically by the demo environment.',
-    limitations:
-      'Tab events cannot distinguish between accidental navigation, browser extensions, or intentional resource access. Human review is required.',
+    explanation: 'Secondary browser tab opened during assessment progression.',
+    limitations: 'Browser extensions, accidental links, or background tasks can trigger tab events. Requires contextual verification.',
     simulated: true,
     requiresHumanReview: true,
   },
@@ -109,12 +130,70 @@ export const DEMO_SIGNALS: Signal[] = [
     occurredAt: '2026-10-20T09:35:00Z',
     recordedAt: '2026-10-20T09:35:01Z',
     sequence: 3,
-    explanation:
-      'A brief focus loss (under 2 seconds) was observed. This observation was generated automatically by the demo environment.',
-    limitations:
-      'Short focus losses are commonly caused by OS notifications, screen savers, and assistive technology. No integrity inference is warranted.',
+    explanation: 'Transient focus deviation (< 1.5s) detected.',
+    limitations: 'Short focus events are consistent with OS popups and screen utilities. No misconduct inference warranted.',
     simulated: true,
     requiresHumanReview: false,
+  },
+  {
+    id: 'signal-004',
+    sessionId: 'session-004',
+    source: 'network',
+    origin: 'system',
+    category: 'network',
+    severity: 'high',
+    occurredAt: '2026-10-20T09:25:12Z',
+    recordedAt: '2026-10-20T09:25:13Z',
+    sequence: 1,
+    explanation: 'Sudden socket reconnection and IP address hop detected mid-session.',
+    limitations: 'Transient Wi-Fi failover or mobile hotspot switches can generate network route shifts.',
+    simulated: true,
+    requiresHumanReview: true,
+  },
+  {
+    id: 'signal-005',
+    sessionId: 'session-004',
+    source: 'tab',
+    origin: 'system',
+    category: 'navigation',
+    severity: 'medium',
+    occurredAt: '2026-10-20T09:31:00Z',
+    recordedAt: '2026-10-20T09:31:01Z',
+    sequence: 2,
+    explanation: 'Clipboard copy event executed while browser lost active focus.',
+    limitations: 'Copy operations cannot distinguish between drafting notes in local scratchpads or prohibited queries.',
+    simulated: true,
+    requiresHumanReview: true,
+  },
+  {
+    id: 'signal-006',
+    sessionId: 'session-002',
+    source: 'browser',
+    origin: 'system',
+    category: 'focus',
+    severity: 'low',
+    occurredAt: '2026-10-20T09:14:20Z',
+    recordedAt: '2026-10-20T09:14:21Z',
+    sequence: 1,
+    explanation: 'Cursor drifted outside viewport boundary for 3 seconds.',
+    limitations: 'Multi-monitor setups commonly trigger boundary departures without loss of focus.',
+    simulated: true,
+    requiresHumanReview: false,
+  },
+  {
+    id: 'signal-007',
+    sessionId: 'session-005',
+    source: 'browser',
+    origin: 'system',
+    category: 'audio',
+    severity: 'medium',
+    occurredAt: '2026-10-15T14:28:44Z',
+    recordedAt: '2026-10-15T14:28:45Z',
+    sequence: 1,
+    explanation: 'Ambient microphone input level exceeded background threshold for 6 seconds.',
+    limitations: 'Ambient noise, family members, or construction noise frequently elevate local microphone metrics.',
+    simulated: true,
+    requiresHumanReview: true,
   },
 ]
 
@@ -127,9 +206,37 @@ export const DEMO_INVESTIGATIONS: Investigation[] = [
     assignedReviewerId: null,
     version: 1,
   },
+  {
+    id: 'investigation-002',
+    sessionId: 'session-004',
+    status: 'under_review',
+    signalIds: ['signal-004', 'signal-005'],
+    assignedReviewerId: 'demo-reviewer',
+    version: 1,
+  },
+  {
+    id: 'investigation-003',
+    sessionId: 'session-005',
+    status: 'reviewed',
+    signalIds: ['signal-007'],
+    assignedReviewerId: 'demo-reviewer',
+    version: 2,
+  },
 ]
 
-export const DEMO_DECISIONS: ReviewDecision[] = []
+export const DEMO_DECISIONS: ReviewDecision[] = [
+  {
+    id: 'decision-001',
+    investigationId: 'investigation-003',
+    disposition: 'clear',
+    reason: 'Audio spike was verified against candidate submission timing; candidate confirmed background domestic appliance noise with no conversation patterns.',
+    notes: 'No unauthorized assistance observed.',
+    reviewerId: 'demo-reviewer',
+    decidedAt: '2026-10-16T11:00:00Z',
+    version: 1,
+    supersedesId: null,
+  },
+]
 
 export const DEMO_AUDIT: AuditEntry[] = [
   {
@@ -137,15 +244,15 @@ export const DEMO_AUDIT: AuditEntry[] = [
     occurredAt: '2026-10-20T09:18:35Z',
     actorType: 'system',
     actorId: 'system',
-    actorLabel: 'System',
+    actorLabel: 'Telemetry Monitor',
     actorRole: 'system',
     action: 'SIGNAL_RECORDED',
     targetType: 'Signal',
     targetId: 'signal-001',
     correlationId: 'session-001',
-    summary: '[SIMULATED] Browser focus-loss signal recorded for session-001.',
+    summary: 'Focus deviation signal recorded for session-001.',
     before: null,
-    after: { signalId: 'signal-001', severity: 'medium' },
+    after: { signalId: 'signal-001', severity: 'medium', category: 'focus' },
     schemaVersion: 1,
   },
   {
@@ -153,15 +260,47 @@ export const DEMO_AUDIT: AuditEntry[] = [
     occurredAt: '2026-10-20T09:22:15Z',
     actorType: 'system',
     actorId: 'system',
-    actorLabel: 'System',
+    actorLabel: 'Telemetry Monitor',
     actorRole: 'system',
     action: 'SIGNAL_RECORDED',
     targetType: 'Signal',
     targetId: 'signal-002',
     correlationId: 'session-001',
-    summary: '[SIMULATED] Tab-open navigation signal recorded for session-001.',
+    summary: 'Tab navigation observation logged for session-001.',
     before: null,
-    after: { signalId: 'signal-002', severity: 'high' },
+    after: { signalId: 'signal-002', severity: 'high', category: 'navigation' },
+    schemaVersion: 1,
+  },
+  {
+    id: 'audit-003',
+    occurredAt: '2026-10-20T09:25:15Z',
+    actorType: 'system',
+    actorId: 'system',
+    actorLabel: 'Telemetry Monitor',
+    actorRole: 'system',
+    action: 'SIGNAL_RECORDED',
+    targetType: 'Signal',
+    targetId: 'signal-004',
+    correlationId: 'session-004',
+    summary: 'Network socket transition observation recorded for session-004.',
+    before: null,
+    after: { signalId: 'signal-004', severity: 'high', category: 'network' },
+    schemaVersion: 1,
+  },
+  {
+    id: 'audit-004',
+    occurredAt: '2026-10-16T11:00:00Z',
+    actorType: 'reviewer',
+    actorId: 'demo-reviewer',
+    actorLabel: 'Reviewer Dr. Sarah Chen',
+    actorRole: 'reviewer',
+    action: 'REVIEW_DECISION_SUBMITTED',
+    targetType: 'Investigation',
+    targetId: 'investigation-003',
+    correlationId: 'investigation-003',
+    summary: 'Review decision "clear" committed for investigation-003 with rationale.',
+    before: { status: 'under_review', version: 1 },
+    after: { status: 'reviewed', decisionId: 'decision-001', disposition: 'clear' },
     schemaVersion: 1,
   },
 ]

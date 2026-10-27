@@ -16,6 +16,10 @@ import type {
   AuditEntry,
   Disposition,
   InstitutionalOutcomeValue,
+  DashboardStats,
+  SignalFilterParams,
+  SessionFilterParams,
+  AuditFilterParams,
 } from '@/domain/types'
 
 export interface PaginatedResult<T> {
@@ -42,15 +46,21 @@ export interface IntegrityService {
 
   // Sessions
   getSession(id: string): Promise<Session>
-  listSessions(page?: number): Promise<PaginatedResult<Session>>
+  listSessions(params?: SessionFilterParams): Promise<PaginatedResult<Session>>
   getSessionSignals(sessionId: string, page?: number): Promise<PaginatedResult<Signal>>
+
+  // Signals Triage Queue
+  listSignals(params?: SignalFilterParams): Promise<PaginatedResult<Signal>>
 
   // Investigations
   getInvestigation(id: string): Promise<Investigation>
+  listInvestigations(page?: number): Promise<PaginatedResult<Investigation>>
+  getInvestigationBySession(sessionId: string): Promise<Investigation | null>
   getInvestigationDecisions(investigationId: string): Promise<ReviewDecision[]>
+  getInvestigationOutcomes(investigationId: string): Promise<InstitutionalOutcome[]>
   submitDecision(investigationId: string, input: DecisionInput, expectedVersion: number): Promise<ReviewDecision>
 
-  // Outcomes (administrator only in a real system)
+  // Outcomes (administrator only in workflow)
   submitOutcome(investigationId: string, input: OutcomeInput, expectedVersion: number): Promise<InstitutionalOutcome>
 
   // Audit
@@ -59,4 +69,9 @@ export interface IntegrityService {
     targetId: string,
     page?: number,
   ): Promise<PaginatedResult<AuditEntry>>
+  getAllAuditEntries(params?: AuditFilterParams): Promise<PaginatedResult<AuditEntry>>
+
+  // Dashboard Aggregates
+  getDashboardStats(): Promise<DashboardStats>
 }
+

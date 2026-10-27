@@ -1,10 +1,7 @@
 /**
  * MockIntegrityService — satisfies the IntegrityService interface using
  * deterministic in-memory fixtures. No network calls. No external dependencies.
- *
- * In a real deployment this would be replaced by HttpIntegrityService.
- * The mock simulates realistic latency and supports mutation for the
- * review/outcome/audit path (decision and outcome append to in-memory state).
+ * Supports realistic latency, filtering, pagination, and atomic updates.
  */
 
 import type {
@@ -21,6 +18,10 @@ import type {
   ReviewDecision,
   InstitutionalOutcome,
   AuditEntry,
+  DashboardStats,
+  SignalFilterParams,
+  SessionFilterParams,
+  AuditFilterParams,
 } from '@/domain/types'
 import {
   DEMO_ASSESSMENTS,
@@ -31,7 +32,7 @@ import {
   DEMO_AUDIT,
 } from '@/mocks/fixtures'
 
-const SIMULATED_DELAY_MS = 400
+const SIMULATED_DELAY_MS = 250
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -56,7 +57,6 @@ function isoNow(): string {
 }
 
 export class MockIntegrityService implements IntegrityService {
-  // Mutable in-memory state — mirrors what the API would persist
   private readonly assessments: Assessment[] = structuredClone(DEMO_ASSESSMENTS)
   private readonly sessions: Session[] = structuredClone(DEMO_SESSIONS)
   private readonly signals: Signal[] = structuredClone(DEMO_SIGNALS)
@@ -77,9 +77,20 @@ export class MockIntegrityService implements IntegrityService {
     return structuredClone(session)
   }
 
-  async listSessions(page = 1): Promise<PaginatedResult<Session>> {
+  async listSessions(params?: SessionFilterParams): Promise<PaginatedResult<Session>> {
     await delay(SIMULATED_DELAY_MS)
-    return paginate(this.sessions, page)
+    let filtered = [...this.sessions]
+    if (params?.status && params.status !== 'all') {
+      filtered = filtered.filter((s) => s.status === params.status)
+    }
+    if (params?.assessmentId && params.assessmentId !== 'all') {
+      filtered = filtered.filter((s) => s.assessmentId === params.assessmentId)
+    }
+    if (params?.search) {
+      const q = params.search.toLowerCase()
+      filtered = filtered.filter((s) => s.id.toLowerCase().includes(q) || s.candidateId.toLowerCase().includes(q))
+    }
+    return paginate(filtered, params?.page ?? 1, params?.pageSize ?? 20)
   }
 
   async getSessionSignals(sessionId: string, page = 1): Promise<PaginatedResult<Signal>> {
@@ -90,6 +101,29 @@ export class MockIntegrityService implements IntegrityService {
     return paginate(filtered, page)
   }
 
+  async listSignals(params?: SignalFilterParams): Promise<PaginatedResult<Signal>> {
+    await delay(SIMULATED_DELAY_MS)
+    let filtered = [...this.signals]
+    if (params?.category && params.category !== 'all') {
+      filtered = filtered.filter((s) => s.category === params.category)
+    }
+    if (params?.severity && params.severity !== 'all') {
+      filtered = filtered.filter((s) => s.severity === params.severity)
+    }
+    if (params?.requiresHumanReview !== undefined && params.requiresHumanReview !== 'all') {
+      filtered = filtered.filter((s) => s.requiresHumanReview === params.requiresHumanReview)
+    }
+    if (params?.sessionId) {
+      filtered = filtered.filter((s) => s.sessionId === params.sessionId)
+    }
+    if (params?.search) {
+      const q = params.search.toLowerCase()
+      filtered = filtered.filter((s) => s.explanation.toLowerCase().includes(q) || s.sessionId.toLowerCase().includes(q))
+    }
+    filtered.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+    return paginate(filtered, params?.page ?? 1, params?.pageSize ?? 20)
+  }
+
   async getInvestigation(id: string): Promise<Investigation> {
     await delay(SIMULATED_DELAY_MS)
     const inv = this.investigations.find((i) => i.id === id)
@@ -97,9 +131,25 @@ export class MockIntegrityService implements IntegrityService {
     return structuredClone(inv)
   }
 
+  async listInvestigations(page = 1): Promise<PaginatedResult<Investigation>> {
+    await delay(SIMULATED_DELAY_MS)
+    return paginate(this.investigations, page)
+  }
+
+  async getInvestigationBySession(sessionId: string): Promise<Investigation | null> {
+    await delay(SIMULATED_DELAY_MS)
+    const inv = this.investigations.find((i) => i.sessionId === sessionId)
+    return inv ? structuredClone(inv) : null
+  }
+
   async getInvestigationDecisions(investigationId: string): Promise<ReviewDecision[]> {
     await delay(SIMULATED_DELAY_MS)
     return structuredClone(this.decisions.filter((d) => d.investigationId === investigationId))
+  }
+
+  async getInvestigationOutcomes(investigationId: string): Promise<InstitutionalOutcome[]> {
+    await delay(SIMULATED_DELAY_MS)
+    return structuredClone(this.outcomes.filter((o) => o.investigationId === investigationId))
   }
 
   async submitDecision(
@@ -141,24 +191,21 @@ export class MockIntegrityService implements IntegrityService {
     }
 
     this.decisions.push(decision)
-
-    // Advance investigation status
     inv.status = 'reviewed'
     inv.version += 1
 
-    // Append audit entry (mirrors what the API transaction does atomically)
     const auditEntry: AuditEntry = {
       id: newId('audit'),
       occurredAt: decision.decidedAt,
       actorType: 'reviewer',
       actorId: 'demo-reviewer',
-      actorLabel: '[DEMO] Reviewer',
+      actorLabel: 'Reviewer Dr. Sarah Chen',
       actorRole: 'reviewer',
       action: 'REVIEW_DECISION_SUBMITTED',
       targetType: 'Investigation',
       targetId: investigationId,
       correlationId: investigationId,
-      summary: `[SIMULATED] Review decision "${decision.disposition}" submitted for investigation ${investigationId}.`,
+      summary: `Review decision "${decision.disposition}" submitted for investigation ${investigationId}.`,
       before: { status: 'under_review', version: expectedVersion },
       after: { status: 'reviewed', decisionId: decision.id, disposition: decision.disposition },
       schemaVersion: 1,
@@ -212,7 +259,6 @@ export class MockIntegrityService implements IntegrityService {
     }
 
     this.outcomes.push(outcome)
-
     inv.status = 'outcome_recorded'
     inv.version += 1
 
@@ -221,13 +267,13 @@ export class MockIntegrityService implements IntegrityService {
       occurredAt: outcome.decidedAt,
       actorType: 'administrator',
       actorId: 'demo-administrator',
-      actorLabel: '[DEMO] Administrator',
+      actorLabel: 'Administrator Dean M. Vance',
       actorRole: 'administrator',
       action: 'INSTITUTIONAL_OUTCOME_RECORDED',
       targetType: 'Investigation',
       targetId: investigationId,
       correlationId: investigationId,
-      summary: `[SIMULATED] Institutional outcome "${outcome.outcome}" recorded by administrator for investigation ${investigationId}.`,
+      summary: `Institutional outcome "${outcome.outcome}" recorded for investigation ${investigationId}.`,
       before: { status: 'reviewed', version: expectedVersion },
       after: { status: 'outcome_recorded', outcomeId: outcome.id, outcome: outcome.outcome },
       schemaVersion: 1,
@@ -245,7 +291,59 @@ export class MockIntegrityService implements IntegrityService {
     await delay(SIMULATED_DELAY_MS)
     const filtered = this.audit
       .filter((a) => a.targetType === targetType && a.targetId === targetId)
-      .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
+      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
     return paginate(filtered, page)
+  }
+
+  async getAllAuditEntries(params?: AuditFilterParams): Promise<PaginatedResult<AuditEntry>> {
+    await delay(SIMULATED_DELAY_MS)
+    let filtered = [...this.audit]
+    if (params?.targetType && params.targetType !== 'all') {
+      filtered = filtered.filter((a) => a.targetType === params.targetType)
+    }
+    if (params?.targetId) {
+      filtered = filtered.filter((a) => a.targetId.toLowerCase().includes(params.targetId!.toLowerCase()))
+    }
+    if (params?.actorRole && params.actorRole !== 'all') {
+      filtered = filtered.filter((a) => a.actorRole === params.actorRole)
+    }
+    if (params?.search) {
+      const q = params.search.toLowerCase()
+      filtered = filtered.filter(
+        (a) =>
+          a.summary.toLowerCase().includes(q) ||
+          a.action.toLowerCase().includes(q) ||
+          a.actorLabel.toLowerCase().includes(q) ||
+          a.targetId.toLowerCase().includes(q),
+      )
+    }
+    filtered.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+    return paginate(filtered, params?.page ?? 1, params?.pageSize ?? 20)
+  }
+
+  async getDashboardStats(): Promise<DashboardStats> {
+    await delay(SIMULATED_DELAY_MS)
+    const totalSessions = this.sessions.length
+    const sessionsRequiringReview = this.sessions.filter((s) => s.status === 'flagged').length
+    const activeSessions = this.sessions.filter((s) => s.status === 'active').length
+    const clearedSessions = this.sessions.filter((s) => s.status === 'cleared').length
+    const submittedSessions = this.sessions.filter((s) => s.status === 'submitted').length
+    const openInvestigations = this.investigations.filter((i) => i.status === 'open' || i.status === 'under_review').length
+    const pendingReviewerDecisions = this.investigations.filter((i) => i.status === 'open' || i.status === 'under_review').length
+    const recordedOutcomes = this.outcomes.length
+    const signalsAwaitingTriage = this.signals.filter((s) => s.requiresHumanReview).length
+
+    return {
+      totalAssessments: this.assessments.length,
+      totalSessions,
+      sessionsRequiringReview,
+      activeSessions,
+      clearedSessions,
+      submittedSessions,
+      openInvestigations,
+      pendingReviewerDecisions,
+      recordedOutcomes,
+      signalsAwaitingTriage,
+    }
   }
 }

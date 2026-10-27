@@ -1,145 +1,218 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useService } from '@/services/useService'
-import type { Session, Signal } from '@/domain/types'
-
-const SEVERITY_BADGE: Record<string, string> = {
-  high:   'badge badge--high',
-  medium: 'badge badge--medium',
-  low:    'badge badge--low',
-}
+import type { Session, Signal, Investigation } from '@/domain/types'
 
 export function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const service = useService()
   const [session, setSession] = useState<Session | null>(null)
   const [signals, setSignals] = useState<Signal[]>([])
+  const [investigation, setInvestigation] = useState<Investigation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!sessionId) return
-    Promise.all([service.getSession(sessionId), service.getSessionSignals(sessionId)])
-      .then(([s, sig]) => {
-        setSession(s)
-        setSignals(sig.items)
-      })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load'))
-      .finally(() => setLoading(false))
+    let cancelled = false
+
+    async function loadData() {
+      setLoading(true)
+      try {
+        const [sess, sigs, inv] = await Promise.all([
+          service.getSession(sessionId!),
+          service.getSessionSignals(sessionId!),
+          service.getInvestigationBySession(sessionId!),
+        ])
+
+        if (!cancelled) {
+          setSession(sess)
+          setSignals(sigs.items)
+          setInvestigation(inv)
+          setLoading(false)
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load session details')
+          setLoading(false)
+        }
+      }
+    }
+
+    loadData()
+    return () => {
+      cancelled = true
+    }
   }, [service, sessionId])
 
   if (loading) {
     return (
-      <div className="state-loading" aria-label="Loading session">
+      <div className="state-loading">
         <span className="spinner" aria-hidden="true" />
-        <span>Loading session…</span>
+        <span>Loading session telemetry…</span>
       </div>
     )
   }
-  if (error) {
+
+  if (error || !session) {
     return (
       <div className="page-container">
-        <div className="alert alert--error" role="alert">⚠️ {error}</div>
-        <Link to="/app/sessions" className="btn btn--secondary" style={{ marginTop: 'var(--space-4)' }}>← Back</Link>
+        <div className="alert alert--error" role="alert">
+          <span>Failed to load session: {error || 'Session not found'}</span>
+        </div>
+        <Link to="/app/sessions" className="btn btn--secondary btn--sm">
+          ← Back to Sessions
+        </Link>
       </div>
     )
   }
-  if (!session) return null
 
   return (
     <div className="page-container">
-      <div style={{ marginBottom: 'var(--space-6)' }}>
-        <Link to="/app/sessions" className="btn btn--secondary btn--sm" style={{ marginBottom: 'var(--space-4)' }}>
-          ← Sessions
-        </Link>
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 style={{ marginBottom: 'var(--space-2)' }}>
-              Session{' '}
-              <code style={{ fontSize: '1.25rem', fontWeight: 400 }}>{session.id}</code>
-            </h1>
-            <p className="text-muted">Started {new Date(session.startedAt).toLocaleString()}</p>
+      {/* Breadcrumbs */}
+      <nav className="breadcrumbs" aria-label="Breadcrumb navigation">
+        <Link to="/app">Dashboard</Link>
+        <span className="breadcrumbs-sep">/</span>
+        <Link to="/app/sessions">Sessions</Link>
+        <span className="breadcrumbs-sep">/</span>
+        <span style={{ color: 'var(--color-text)' }}>{session.id}</span>
+      </nav>
+
+      {/* Header */}
+      <div className="page-header">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1>Session Context</h1>
+            <code className="text-mono" style={{ fontSize: '1.25rem', color: 'var(--color-accent)' }}>
+              {session.id}
+            </code>
+            <span
+              className={`badge badge--${
+                session.status === 'flagged' ? 'high' : session.status === 'cleared' ? 'low' : 'neutral'
+              }`}
+            >
+              {session.status}
+            </span>
           </div>
-          <span className={`badge badge--${session.status === 'flagged' ? 'high' : session.status === 'cleared' ? 'clear' : 'status-open'}`}
-            style={{ fontSize: '0.875rem', padding: '4px 12px' }}
-          >
-            {session.status}
-          </span>
+          <p className="text-muted text-small" style={{ marginTop: 'var(--space-1)' }}>
+            Candidate reference: <strong>{session.candidateId}</strong> · Assessment program: {session.assessmentId}
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          {investigation ? (
+            <Link to={`/app/investigations/${investigation.id}`} className="btn btn--primary">
+              Open Investigation Workspace ({investigation.status}) →
+            </Link>
+          ) : (
+            <span className="text-subtle text-small">No open investigation for this session</span>
+          )}
         </div>
       </div>
 
-      {/* Signal timeline */}
-      <section aria-labelledby="signals-heading" style={{ marginBottom: 'var(--space-8)' }}>
-        <h2 id="signals-heading" style={{ marginBottom: 'var(--space-4)' }}>
-          Signal timeline
-          <span
-            style={{ marginLeft: 'var(--space-3)', fontSize: '0.875rem', fontWeight: 400 }}
-            className="text-muted"
-          >
-            {signals.length} observation{signals.length !== 1 ? 's' : ''}
-          </span>
-        </h2>
+      {/* Metadata Cards */}
+      <div className="metrics-grid" style={{ marginBottom: 'var(--space-6)' }}>
+        <div className="stat-card">
+          <div className="stat-card__label">Session Status</div>
+          <div className="stat-card__value" style={{ fontSize: '1.35rem', textTransform: 'capitalize' }}>
+            {session.status}
+          </div>
+          <div className="stat-card__desc">Current operational status</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card__label">Preflight Readiness</div>
+          <div className="stat-card__value" style={{ fontSize: '1.35rem' }}>
+            <span className={`badge badge--${session.readiness === 'ready' ? 'low' : 'medium'}`}>
+              {session.readiness}
+            </span>
+          </div>
+          <div className="stat-card__desc">Verified browser hardware state</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card__label">Recorded Telemetry</div>
+          <div className="stat-card__value">{signals.length}</div>
+          <div className="stat-card__desc">Total observations captured during window</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card__label">Session Started</div>
+          <div className="stat-card__value" style={{ fontSize: '1.15rem' }}>
+            {new Date(session.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div className="stat-card__desc">{new Date(session.startedAt).toLocaleDateString()}</div>
+        </div>
+      </div>
+
+      {/* Telemetry Observations Timeline */}
+      <section className="card" aria-labelledby="telemetry-timeline-heading">
+        <div className="card-header">
+          <h2 id="telemetry-timeline-heading" className="card-title">
+            Chronological Telemetry Observations ({signals.length})
+          </h2>
+          <span className="text-subtle text-xs">Observation data only — requires contextual human review</span>
+        </div>
 
         {signals.length === 0 ? (
-          <div className="state-empty">
-            <div className="state-empty__icon">📋</div>
-            <p className="state-empty__title">No signals recorded</p>
+          <div className="state-empty" style={{ padding: 'var(--space-6)' }}>
+            <p>No telemetry observations were captured for this session.</p>
           </div>
         ) : (
-          <div className="timeline" aria-label="Signal timeline">
+          <div className="timeline">
             {signals.map((sig) => (
               <div key={sig.id} className="timeline-item">
                 <div
                   className="timeline-dot"
                   style={{
                     borderColor:
-                      sig.severity === 'high'   ? 'var(--color-high)'   :
-                      sig.severity === 'medium' ? 'var(--color-medium)' :
-                                                   'var(--color-low)',
+                      sig.severity === 'high'
+                        ? 'var(--color-high)'
+                        : sig.severity === 'medium'
+                          ? 'var(--color-medium)'
+                          : 'var(--color-low)',
                   }}
                   aria-hidden="true"
                 >
-                  {sig.severity === 'high' ? '🔴' : sig.severity === 'medium' ? '🟡' : '🟢'}
+                  {sig.sequence}
                 </div>
-                <div className="card" style={{ flex: 1 }}>
-                  <div className="flex justify-between items-start" style={{ marginBottom: 'var(--space-3)', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
-                    <div className="flex gap-2 items-center" style={{ flexWrap: 'wrap' }}>
-                      <span className={SEVERITY_BADGE[sig.severity]}>{sig.severity}</span>
-                      <span className="badge" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-2)' }}>
-                        {sig.category}
+
+                <div className="card card--compact" style={{ background: 'var(--color-surface-2)' }}>
+                  <div className="flex justify-between items-start" style={{ marginBottom: 'var(--space-2)' }}>
+                    <div className="flex gap-2 items-center">
+                      <span className={`badge badge--${sig.severity}`}>{sig.severity}</span>
+                      <span className="font-semibold text-small" style={{ textTransform: 'capitalize' }}>
+                        {sig.category} deviation
                       </span>
-                      {sig.simulated && (
-                        <span className="badge badge--simulated">⚠ SIMULATED</span>
-                      )}
+                      <span className="badge badge--neutral">Source: {sig.source}</span>
                       {sig.requiresHumanReview && (
-                        <span className="badge" style={{ background: 'rgba(96,165,250,0.15)', color: 'var(--color-info)' }}>
-                          Requires human review
-                        </span>
+                        <span className="badge badge--needs-follow-up">Requires Human Review</span>
                       )}
                     </div>
-                    <time
-                      className="text-muted text-small text-mono"
-                      dateTime={sig.occurredAt}
-                    >
-                      {new Date(sig.occurredAt).toLocaleString()}
+                    <time className="text-subtle text-xs text-mono" dateTime={sig.occurredAt}>
+                      {new Date(sig.occurredAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })}
                     </time>
                   </div>
-                  <p style={{ marginBottom: 'var(--space-3)', color: 'var(--color-text)' }}>
+
+                  <p className="text-small" style={{ color: 'var(--color-text)', marginBottom: 'var(--space-2)' }}>
                     {sig.explanation}
                   </p>
+
                   <div
                     style={{
-                      background: 'var(--color-surface-2)',
-                      borderRadius: 'var(--radius)',
-                      padding: 'var(--space-3)',
-                      fontSize: '0.875rem',
+                      background: 'var(--color-surface-3)',
+                      borderLeft: '3px solid var(--color-text-3)',
+                      padding: 'var(--space-2) var(--space-3)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.75rem',
+                      color: 'var(--color-text-2)',
                     }}
                   >
-                    <span style={{ color: 'var(--color-text-3)', fontWeight: 500 }}>Limitation: </span>
-                    <span className="text-muted">{sig.limitations}</span>
-                  </div>
-                  <div className="text-muted text-small" style={{ marginTop: 'var(--space-2)' }}>
-                    Source: <strong>{sig.source}</strong> · Origin: <strong>{sig.origin}</strong> · Seq #{sig.sequence}
+                    <strong>Limitation note:</strong> {sig.limitations}
                   </div>
                 </div>
               </div>
@@ -147,16 +220,6 @@ export function SessionDetailPage() {
           </div>
         )}
       </section>
-
-      {/* Link to investigation if flagged */}
-      {session.status === 'flagged' && (
-        <div className="alert alert--warning" style={{ marginBottom: 'var(--space-6)' }}>
-          ⚠️ This session is flagged for review.{' '}
-          <Link to="/app/investigations/investigation-001" style={{ color: 'inherit', textDecoration: 'underline' }}>
-            Open investigation →
-          </Link>
-        </div>
-      )}
     </div>
   )
 }

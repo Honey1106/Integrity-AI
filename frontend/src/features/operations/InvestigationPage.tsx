@@ -1,120 +1,112 @@
-import { useEffect, useState, useId } from 'react'
+import { useEffect, useState, useId, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useService } from '@/services/useService'
+import { usePersona } from '@/app/PersonaContext'
 import type {
   Investigation,
   ReviewDecision,
   InstitutionalOutcome,
   AuditEntry,
+  Signal,
+  Session,
   Disposition,
   InstitutionalOutcomeValue,
 } from '@/domain/types'
-import { canSubmitReviewDecision, canSubmitOutcome, DISPOSITION_LABELS, DISPOSITION_DESCRIPTIONS } from '@/domain/transitions'
+import {
+  canSubmitOutcome,
+  DISPOSITION_LABELS,
+  DISPOSITION_DESCRIPTIONS,
+} from '@/domain/transitions'
+
 
 const OUTCOME_OPTIONS: Array<{ value: InstitutionalOutcomeValue; label: string; desc: string }> = [
-  { value: 'no_action', label: 'No action', desc: 'After review, no institutional action is warranted.' },
-  { value: 'caution_issued', label: 'Caution issued', desc: 'A formal caution has been issued to the candidate.' },
-  { value: 'referral_required', label: 'Referral required', desc: 'Case referred to the institutional integrity committee.' },
-  { value: 'further_review', label: 'Further review', desc: 'Additional evidence or process steps are needed.' },
+  { value: 'no_action', label: 'No Action Warranted', desc: 'Evidence reviewed; standard completion stands without penalty.' },
+  { value: 'caution_issued', label: 'Formal Caution Issued', desc: 'Candidate cautioned regarding testing environment expectations.' },
+  { value: 'referral_required', label: 'Committee Referral', desc: 'Case referred to Institutional Integrity Board for formal hearing.' },
+  { value: 'further_review', label: 'Technical Telemetry Inconclusive', desc: 'Session voided due to technical anomalies; candidate offered proctored re-sit.' },
 ]
-
-function AuditRow({ entry }: { entry: AuditEntry }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 'var(--space-4)',
-        padding: 'var(--space-4)',
-        borderBottom: '1px solid var(--color-border)',
-      }}
-    >
-      <div style={{ minWidth: '120px' }}>
-        <time
-          className="text-mono text-small text-muted"
-          dateTime={entry.occurredAt}
-        >
-          {new Date(entry.occurredAt).toLocaleString()}
-        </time>
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 600, color: 'var(--color-text)', marginBottom: 'var(--space-1)' }}>
-          {entry.action.replace(/_/g, ' ')}
-        </div>
-        <div className="text-muted text-small">{entry.summary}</div>
-        <div className="text-muted text-small" style={{ marginTop: 'var(--space-1)' }}>
-          Actor: <strong>{entry.actorLabel}</strong> ({entry.actorRole}) · Target: {entry.targetType} {entry.targetId}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export function InvestigationPage() {
   const { investigationId } = useParams<{ investigationId: string }>()
   const service = useService()
+  const { activeRole, actorLabel } = usePersona()
   const formId = useId()
 
   const [investigation, setInvestigation] = useState<Investigation | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [signals, setSignals] = useState<Signal[]>([])
   const [decisions, setDecisions] = useState<ReviewDecision[]>([])
   const [outcomes, setOutcomes] = useState<InstitutionalOutcome[]>([])
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Decision form state
+  // Reviewer Decision Form
   const [disposition, setDisposition] = useState<Disposition>('clear')
   const [reason, setReason] = useState('')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
 
-  // Outcome form state
+  // Administrator Institutional Outcome Form
   const [outcomeValue, setOutcomeValue] = useState<InstitutionalOutcomeValue>('no_action')
   const [outcomeReason, setOutcomeReason] = useState('')
   const [submittingOutcome, setSubmittingOutcome] = useState(false)
   const [outcomeError, setOutcomeError] = useState<string | null>(null)
-  const [outcomeSuccess, setOutcomeSuccess] = useState(false)
-  const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [showOutcomeConfirmModal, setShowOutcomeConfirmModal] = useState(false)
+  const [conflictError, setConflictError] = useState<string | null>(null)
 
-  async function loadData(showSpinner = false) {
+  const reloadData = useCallback(async () => {
+
     if (!investigationId) return
-    if (showSpinner) setLoading(true)
     try {
-      const [inv, dec, audit] = await Promise.all([
-        service.getInvestigation(investigationId),
+      const inv = await service.getInvestigation(investigationId)
+      const [sess, sigs, decs, outs, audit] = await Promise.all([
+        service.getSession(inv.sessionId),
+        service.getSessionSignals(inv.sessionId),
         service.getInvestigationDecisions(investigationId),
+        service.getInvestigationOutcomes(investigationId),
         service.getAuditEntries('Investigation', investigationId),
       ])
       setInvestigation(inv)
-      setDecisions(dec)
+      setSession(sess)
+      setSignals(sigs.items)
+      setDecisions(decs)
+      setOutcomes(outs)
       setAuditEntries(audit.items)
+      setConflictError(null)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load')
-    } finally {
-      setLoading(false)
+      setError(err instanceof Error ? err.message : 'Failed to load investigation')
     }
-  }
+  }, [investigationId, service])
 
   useEffect(() => {
     let cancelled = false
     if (!investigationId) return
 
-    Promise.all([
-      service.getInvestigation(investigationId),
-      service.getInvestigationDecisions(investigationId),
-      service.getAuditEntries('Investigation', investigationId),
-    ])
-      .then(([inv, dec, audit]) => {
+    service.getInvestigation(investigationId)
+      .then(async (inv) => {
+        if (cancelled) return
+        const [sess, sigs, decs, outs, audit] = await Promise.all([
+          service.getSession(inv.sessionId),
+          service.getSessionSignals(inv.sessionId),
+          service.getInvestigationDecisions(investigationId),
+          service.getInvestigationOutcomes(investigationId),
+          service.getAuditEntries('Investigation', investigationId),
+        ])
         if (cancelled) return
         setInvestigation(inv)
-        setDecisions(dec)
+        setSession(sess)
+        setSignals(sigs.items)
+        setDecisions(decs)
+        setOutcomes(outs)
         setAuditEntries(audit.items)
         setLoading(false)
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
+        setError(err instanceof Error ? err.message : 'Failed to load investigation')
         setLoading(false)
       })
 
@@ -123,41 +115,58 @@ export function InvestigationPage() {
     }
   }, [investigationId, service])
 
-  async function handleSubmitDecision(e: React.FormEvent) {
-    e.preventDefault()
+
+
+  async function handleConfirmDecision() {
     if (!investigation) return
+    setShowConfirmModal(false)
     setSubmitError(null)
+    setConflictError(null)
     setSubmitting(true)
+
     try {
-      await service.submitDecision(investigation.id, { disposition, reason, notes: notes || undefined }, investigation.version)
-      setSubmitSuccess(true)
+      await service.submitDecision(
+        investigation.id,
+        { disposition, reason: reason.trim(), notes: notes.trim() || undefined },
+        investigation.version,
+      )
       setReason('')
       setNotes('')
-      loadData()
+      await reloadData()
     } catch (err: unknown) {
-      setSubmitError(err instanceof Error ? err.message : 'Submission failed')
+      const isConflict = (err as { status?: number })?.status === 409 || (err as { code?: string })?.code === 'CONFLICT'
+      if (isConflict) {
+        setConflictError('Case conflict: another reviewer or administrator updated this record. Please refresh.')
+      } else {
+        setSubmitError(err instanceof Error ? err.message : 'Decision submission failed')
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function handleSubmitOutcome(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleConfirmOutcome() {
     if (!investigation) return
+    setShowOutcomeConfirmModal(false)
     setOutcomeError(null)
+    setConflictError(null)
     setSubmittingOutcome(true)
+
     try {
-      const result = await service.submitOutcome(
+      await service.submitOutcome(
         investigation.id,
-        { outcome: outcomeValue, reason: outcomeReason },
+        { outcome: outcomeValue, reason: outcomeReason.trim() },
         investigation.version,
       )
-      setOutcomes((prev) => [...prev, result])
-      setOutcomeSuccess(true)
       setOutcomeReason('')
-      loadData()
+      await reloadData()
     } catch (err: unknown) {
-      setOutcomeError(err instanceof Error ? err.message : 'Outcome submission failed')
+      const isConflict = (err as { status?: number })?.status === 409 || (err as { code?: string })?.code === 'CONFLICT'
+      if (isConflict) {
+        setConflictError('Version conflict: the case record has changed. Please refresh to inspect latest review.')
+      } else {
+        setOutcomeError(err instanceof Error ? err.message : 'Outcome recording failed')
+      }
     } finally {
       setSubmittingOutcome(false)
     }
@@ -165,351 +174,485 @@ export function InvestigationPage() {
 
   if (loading) {
     return (
-      <div className="state-loading" aria-label="Loading investigation">
+      <div className="state-loading">
         <span className="spinner" aria-hidden="true" />
-        <span>Loading investigation…</span>
+        <span>Loading investigation case &amp; evidence timeline…</span>
       </div>
     )
   }
-  if (error) {
+
+  if (error || !investigation) {
     return (
       <div className="page-container">
-        <div className="alert alert--error" role="alert">⚠️ {error}</div>
+        <div className="alert alert--error" role="alert">
+          <span>Failed to load investigation: {error || 'Record not found'}</span>
+        </div>
+        <Link to="/app/sessions" className="btn btn--secondary btn--sm">
+          ← Back to Sessions
+        </Link>
       </div>
     )
   }
-  if (!investigation) return null
 
-  const canDecide = canSubmitReviewDecision(investigation.status)
-  const canOutcome = canSubmitOutcome(investigation.status)
+  const canRecordOutcome = canSubmitOutcome(investigation.status)
 
   return (
     <div className="page-container page-container--wide">
-      {/* Header */}
-      <div style={{ marginBottom: 'var(--space-6)' }}>
-        <Link to="/app/sessions" className="btn btn--secondary btn--sm" style={{ marginBottom: 'var(--space-4)' }}>
-          ← Sessions
-        </Link>
-        <div className="flex justify-between items-start" style={{ flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-          <div>
-            <h1 style={{ marginBottom: 'var(--space-2)' }}>Investigation</h1>
-            <p className="text-muted">
-              Session: <code>{investigation.sessionId}</code> ·{' '}
-              {investigation.signalIds.length} signal{investigation.signalIds.length !== 1 ? 's' : ''} ·{' '}
-              Version {investigation.version}
-            </p>
-          </div>
-          <div className="flex gap-3 items-center" style={{ flexWrap: 'wrap' }}>
+      {/* 1. Context Breadcrumb & Top Bar */}
+      <nav className="breadcrumbs" aria-label="Investigation Breadcrumb">
+        <Link to="/app">Dashboard</Link>
+        <span className="breadcrumbs-sep">/</span>
+        <Link to="/app/sessions">Sessions</Link>
+        <span className="breadcrumbs-sep">/</span>
+        <Link to={`/app/sessions/${investigation.sessionId}`}>{investigation.sessionId}</Link>
+        <span className="breadcrumbs-sep">/</span>
+        <span style={{ color: 'var(--color-text)' }}>Case #{investigation.id}</span>
+      </nav>
+
+      {conflictError && (
+        <div className="alert alert--error flex justify-between items-center" role="alert">
+          <span>⚠️ {conflictError}</span>
+          <button type="button" className="btn btn--secondary btn--sm" onClick={() => reloadData()}>
+            Reload Latest State
+          </button>
+        </div>
+      )}
+
+      {/* Investigation Context Header */}
+      <div className="page-header" style={{ marginBottom: 'var(--space-6)' }}>
+        <div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1>Investigation Workspace</h1>
+            <code className="text-mono" style={{ fontSize: '1.1rem', color: 'var(--color-accent)' }}>
+              {investigation.id}
+            </code>
             <span
-              className={`badge badge--status-${
-                investigation.status === 'outcome_recorded' ? 'outcome' :
-                investigation.status === 'reviewed'         ? 'reviewed' : 'open'
+              className={`badge badge--${
+                investigation.status === 'outcome_recorded'
+                  ? 'low'
+                  : investigation.status === 'reviewed'
+                    ? 'neutral'
+                    : 'high'
               }`}
-              style={{ fontSize: '0.875rem', padding: '4px 12px' }}
+              style={{ fontSize: '0.8125rem', padding: '3px 10px' }}
             >
-              {investigation.status.replace(/_/g, ' ')}
+              Status: {investigation.status.replace(/_/g, ' ')}
             </span>
-            <span className="badge badge--simulated">⚠ SIMULATED</span>
+            <span className="badge badge--neutral">Record Version: v{investigation.version}</span>
           </div>
+
+          <p className="text-muted text-small" style={{ marginTop: 'var(--space-1)' }}>
+            Associated Session: <strong>{investigation.sessionId}</strong>
+            {session && ` · Candidate Reference: ${session.candidateId} · Program: ${session.assessmentId}`}
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <Link to={`/app/sessions/${investigation.sessionId}`} className="btn btn--secondary btn--sm">
+            View Raw Session Telemetry →
+          </Link>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 'var(--space-8)', alignItems: 'start' }}>
-
-        {/* Main column: decisions + audit trail */}
+      {/* 3-Tier Main Grid: Evidence Timeline (Left) + Reviewer Workspace (Right) */}
+      <div className="investigation-grid">
+        {/* Left Column: Evidence & Chronological Observation Timeline */}
         <div>
-          {/* Prior decisions */}
-          <section aria-labelledby="decisions-heading" style={{ marginBottom: 'var(--space-8)' }}>
-            <h2 id="decisions-heading" style={{ marginBottom: 'var(--space-4)' }}>Review decisions</h2>
-            {decisions.length === 0 ? (
+          <section className="card" aria-labelledby="evidence-timeline-heading" style={{ marginBottom: 'var(--space-6)' }}>
+            <div className="card-header">
+              <h2 id="evidence-timeline-heading" className="card-title">
+                Recorded Evidence &amp; Telemetry Timeline ({signals.length})
+              </h2>
+              <span className="text-subtle text-xs">
+                Chronological observation events · All telemetry requires human context
+              </span>
+            </div>
+
+            {signals.length === 0 ? (
               <div className="state-empty" style={{ padding: 'var(--space-6)' }}>
-                <div className="state-empty__icon">📋</div>
-                <p className="state-empty__title">No decisions yet</p>
+                <p>No telemetry observations were captured for this session.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                {decisions.map((d) => (
-                  <div key={d.id} className="card">
-                    <div className="flex justify-between items-center" style={{ marginBottom: 'var(--space-3)' }}>
-                      <div className="flex gap-2 items-center">
-                        <span
-                          className={`badge badge--${d.disposition === 'clear' ? 'clear' : d.disposition === 'escalated' ? 'escalated' : 'needs-follow-up'}`}
-                        >
-                          {DISPOSITION_LABELS[d.disposition]}
-                        </span>
-                        {d.supersedesId && (
-                          <span className="badge" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-3)' }}>
-                            Revision v{d.version}
-                          </span>
-                        )}
-                      </div>
-                      <time className="text-muted text-small text-mono" dateTime={d.decidedAt}>
-                        {new Date(d.decidedAt).toLocaleString()}
-                      </time>
+              <div className="timeline">
+                {signals.map((sig) => (
+                  <div key={sig.id} className="timeline-item">
+                    <div
+                      className="timeline-dot"
+                      style={{
+                        borderColor:
+                          sig.severity === 'high'
+                            ? 'var(--color-high)'
+                            : sig.severity === 'medium'
+                              ? 'var(--color-medium)'
+                              : 'var(--color-low)',
+                      }}
+                      aria-hidden="true"
+                    >
+                      {sig.sequence}
                     </div>
-                    <p style={{ marginBottom: d.notes ? 'var(--space-3)' : 0 }}>
-                      <span style={{ color: 'var(--color-text-3)', fontWeight: 500 }}>Reason: </span>
-                      {d.reason}
-                    </p>
-                    {d.notes && (
-                      <p className="text-muted text-small">{d.notes}</p>
-                    )}
-                    <p className="text-muted text-small" style={{ marginTop: 'var(--space-2)' }}>
-                      Reviewer: [DEMO] Reviewer
-                    </p>
+
+                    <div className="card card--compact" style={{ background: 'var(--color-surface-2)' }}>
+                      <div className="flex justify-between items-start" style={{ marginBottom: 'var(--space-2)' }}>
+                        <div className="flex gap-2 items-center flex-wrap">
+                          <span className={`badge badge--${sig.severity}`}>{sig.severity}</span>
+                          <span className="font-semibold text-small" style={{ textTransform: 'capitalize' }}>
+                            {sig.category} Observation
+                          </span>
+                          <span className="badge badge--neutral">Source: {sig.source}</span>
+                          {sig.requiresHumanReview && (
+                            <span className="badge badge--needs-follow-up">Flagged for Triage</span>
+                          )}
+                        </div>
+
+                        <time className="text-subtle text-xs text-mono" dateTime={sig.occurredAt}>
+                          {new Date(sig.occurredAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          })}
+                        </time>
+                      </div>
+
+                      <p className="text-small" style={{ color: 'var(--color-text)', marginBottom: 'var(--space-2)' }}>
+                        {sig.explanation}
+                      </p>
+
+                      <div
+                        style={{
+                          background: 'var(--color-surface-3)',
+                          borderLeft: '3px solid var(--color-text-3)',
+                          padding: 'var(--space-2) var(--space-3)',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.75rem',
+                          color: 'var(--color-text-2)',
+                        }}
+                      >
+                        <strong style={{ color: 'var(--color-text)' }}>Telemetry limitation: </strong>
+                        {sig.limitations}
+                      </div>
+
+                      <div className="flex justify-between items-center text-subtle text-xs" style={{ marginTop: 'var(--space-2)' }}>
+                        <span>Captured via {sig.source} ({sig.origin})</span>
+                        <span className="text-mono">Seq #{sig.sequence}</span>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </section>
 
-          {/* Institutional outcomes */}
-          {outcomes.length > 0 && (
-            <section aria-labelledby="outcomes-heading" style={{ marginBottom: 'var(--space-8)' }}>
-              <h2 id="outcomes-heading" style={{ marginBottom: 'var(--space-4)' }}>Institutional outcomes</h2>
-              {outcomes.map((o) => (
-                <div key={o.id} className="card" style={{ borderColor: 'rgba(139,92,246,0.4)' }}>
-                  <div className="flex justify-between items-center" style={{ marginBottom: 'var(--space-3)' }}>
-                    <span className="badge badge--status-outcome">{o.outcome.replace(/_/g, ' ')}</span>
-                    <time className="text-muted text-small text-mono" dateTime={o.decidedAt}>
-                      {new Date(o.decidedAt).toLocaleString()}
-                    </time>
-                  </div>
-                  <p><span style={{ color: 'var(--color-text-3)', fontWeight: 500 }}>Reason: </span>{o.reason}</p>
-                  <p className="text-muted text-small" style={{ marginTop: 'var(--space-2)' }}>
-                    Administrator: [DEMO] Administrator
-                  </p>
-                </div>
-              ))}
-            </section>
-          )}
-
-          {/* Audit trail */}
-          <section aria-labelledby="audit-heading">
-            <h2 id="audit-heading" style={{ marginBottom: 'var(--space-4)' }}>
-              Audit trail
-              <span className="text-muted text-small" style={{ marginLeft: 'var(--space-3)', fontWeight: 400 }}>
-                (append-only · {auditEntries.length} entr{auditEntries.length !== 1 ? 'ies' : 'y'})
-              </span>
-            </h2>
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }} aria-label="Audit log">
-              {auditEntries.length === 0 ? (
-                <div className="state-empty" style={{ padding: 'var(--space-6)' }}>
-                  <p className="text-muted text-small">No audit entries yet.</p>
-                </div>
-              ) : (
-                auditEntries.map((e) => <AuditRow key={e.id} entry={e} />)
-              )}
+          {/* Scoped Audit History for this Investigation */}
+          <section className="card" aria-labelledby="scoped-audit-heading">
+            <div className="card-header">
+              <h2 id="scoped-audit-heading" className="card-title">
+                Case Audit Trail (Append-Only)
+              </h2>
+              <span className="text-subtle text-xs">{auditEntries.length} immutable entries</span>
             </div>
+
+            {auditEntries.length === 0 ? (
+              <div className="state-empty" style={{ padding: 'var(--space-6)' }}>
+                <p>No audit entries recorded for this case yet.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {auditEntries.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      background: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius)',
+                      padding: 'var(--space-3)',
+                      fontSize: '0.8125rem',
+                    }}
+                  >
+                    <div className="flex justify-between items-center" style={{ marginBottom: '4px' }}>
+                      <span className="font-semibold" style={{ color: 'var(--color-text)' }}>
+                        {a.action.replace(/_/g, ' ')}
+                      </span>
+                      <time className="text-subtle text-xs text-mono" dateTime={a.occurredAt}>
+                        {new Date(a.occurredAt).toLocaleString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </time>
+                    </div>
+                    <p className="text-small text-muted" style={{ marginBottom: '6px' }}>
+                      {a.summary}
+                    </p>
+                    <div className="text-xs text-subtle">
+                      Actor: <strong>{a.actorLabel}</strong> ({a.actorRole}) · Correlation ID: {a.correlationId}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
 
-        {/* Right column: action panels */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', position: 'sticky', top: 'var(--space-4)' }}>
+        {/* Right Column: Reviewer Decision Workspace + Institutional Outcome (Administrator) */}
+        <div>
+          {/* Prior Review Decisions History */}
+          <section className="card" aria-labelledby="prior-decisions-heading" style={{ marginBottom: 'var(--space-6)' }}>
+            <div className="card-header">
+              <h2 id="prior-decisions-heading" className="card-title">
+                Review Decision History ({decisions.length})
+              </h2>
+            </div>
 
-          {/* Reviewer decision form */}
-          <section className="card" aria-labelledby="decision-form-heading">
-            <h2 id="decision-form-heading" style={{ marginBottom: 'var(--space-4)' }}>
-              Submit review decision
-              <span className="badge badge--simulated" style={{ marginLeft: 'var(--space-2)', verticalAlign: 'middle' }}>
-                DEMO REVIEWER
-              </span>
-            </h2>
-
-            {!canDecide && !submitSuccess && (
-              <div className="alert alert--info">
-                ℹ️ This investigation is in status &ldquo;{investigation.status.replace(/_/g, ' ')}&rdquo;. New decisions cannot be submitted.
+            {decisions.length === 0 ? (
+              <div className="state-empty" style={{ padding: 'var(--space-4)' }}>
+                <p className="text-small text-muted">No review decisions committed yet.</p>
               </div>
-            )}
-
-            {submitSuccess && (
-              <div className="alert alert--success" role="status" aria-live="polite">
-                ✅ Decision submitted successfully. Audit entry appended.
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {decisions.map((d) => (
+                  <div
+                    key={d.id}
+                    style={{
+                      background: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius)',
+                      padding: 'var(--space-3)',
+                    }}
+                  >
+                    <div className="flex justify-between items-center" style={{ marginBottom: 'var(--space-1)' }}>
+                      <span className={`badge badge--${d.disposition === 'clear' ? 'low' : d.disposition === 'needs_follow_up' ? 'medium' : 'high'}`}>
+                        {DISPOSITION_LABELS[d.disposition]}
+                      </span>
+                      <span className="text-subtle text-xs">v{d.version}</span>
+                    </div>
+                    <p className="text-small font-medium" style={{ margin: 'var(--space-2) 0 var(--space-1)' }}>
+                      {d.reason}
+                    </p>
+                    {d.notes && <p className="text-xs text-muted">Notes: {d.notes}</p>}
+                    <div className="text-subtle text-xs" style={{ marginTop: 'var(--space-2)' }}>
+                      Decided by {d.reviewerId} · {new Date(d.decidedAt).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-
-            {canDecide && (
-              <form
-                id={`${formId}-decision`}
-                onSubmit={handleSubmitDecision}
-                aria-label="Review decision form"
-                noValidate
-              >
-                {submitError && (
-                  <div className="alert alert--error" role="alert" style={{ marginBottom: 'var(--space-4)' }}>
-                    ⚠️ {submitError}
-                  </div>
-                )}
-
-                {/* Disposition */}
-                <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
-                  <span className="form-label" id={`${formId}-disposition-label`}>
-                    Disposition <span className="form-required" aria-label="required">*</span>
-                  </span>
-                  <div className="radio-group" role="radiogroup" aria-labelledby={`${formId}-disposition-label`}>
-                    {(Object.keys(DISPOSITION_LABELS) as Disposition[]).map((d) => (
-                      <label
-                        key={d}
-                        className={`radio-option${disposition === d ? ' radio-option--selected' : ''}`}
-                      >
-                        <input
-                          type="radio"
-                          name={`${formId}-disposition`}
-                          value={d}
-                          checked={disposition === d}
-                          onChange={() => setDisposition(d)}
-                        />
-                        <div>
-                          <div style={{ fontWeight: 600 }}>{DISPOSITION_LABELS[d]}</div>
-                          <div className="text-small text-muted">{DISPOSITION_DESCRIPTIONS[d]}</div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Reason */}
-                <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
-                  <label className="form-label" htmlFor={`${formId}-reason`}>
-                    Reason <span className="form-required" aria-label="required">*</span>
-                  </label>
-                  <textarea
-                    id={`${formId}-reason`}
-                    className="form-control"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Explain your reasoning based on the evidence…"
-                    required
-                    aria-required="true"
-                    rows={4}
-                  />
-                </div>
-
-                {/* Notes */}
-                <div className="form-group" style={{ marginBottom: 'var(--space-5)' }}>
-                  <label className="form-label" htmlFor={`${formId}-notes`}>
-                    Notes (optional)
-                  </label>
-                  <textarea
-                    id={`${formId}-notes`}
-                    className="form-control"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Additional context or follow-up actions…"
-                    rows={2}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="btn btn--primary"
-                  disabled={submitting || !reason.trim()}
-                  aria-disabled={submitting || !reason.trim()}
-                  id="btn-submit-decision"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                >
-                  {submitting ? (
-                    <><span className="spinner" style={{ width: '1rem', height: '1rem' }} aria-hidden="true" /> Submitting…</>
-                  ) : (
-                    'Submit decision'
-                  )}
-                </button>
-              </form>
             )}
           </section>
 
-          {/* Administrator outcome panel */}
-          <section className="card" aria-labelledby="admin-heading" style={{ borderColor: 'rgba(139,92,246,0.3)' }}>
-            <h2 id="admin-heading" style={{ marginBottom: 'var(--space-3)' }}>
-              Institutional outcome
-              <span className="badge" style={{ marginLeft: 'var(--space-2)', background: 'rgba(139,92,246,0.15)', color: '#a78bfa', verticalAlign: 'middle' }}>
-                ADMIN ONLY
-              </span>
-            </h2>
-            <p className="text-muted text-small" style={{ marginBottom: 'var(--space-4)' }}>
-              Only a designated administrator may record an institutional outcome. In this demo,
-              an administrator persona is simulated. This action is separate from reviewer disposition.
-            </p>
+          {/* Reviewer Decision Form (Enabled for open/under_review) */}
+          <section className="card" aria-labelledby="decision-form-heading" style={{ marginBottom: 'var(--space-6)' }}>
+            <div className="card-header">
+              <h2 id="decision-form-heading" className="card-title">
+                {investigation.status === 'reviewed' || investigation.status === 'outcome_recorded'
+                  ? 'Submit Decision Revision'
+                  : 'Record Reviewer Decision'}
+              </h2>
+              <span className="badge badge--neutral">Active Role: {activeRole}</span>
+            </div>
 
-            {!showAdminPanel && (
-              <button
-                type="button"
-                className="btn btn--secondary btn--sm"
-                onClick={() => setShowAdminPanel(true)}
-                disabled={!canOutcome}
-                aria-disabled={!canOutcome}
-                id="btn-show-admin-panel"
-              >
-                {canOutcome ? 'Open administrator panel [DEMO]' : `Requires "reviewed" status (current: ${investigation.status.replace(/_/g, ' ')})`}
-              </button>
-            )}
+            <form
+              id={formId}
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!reason.trim()) {
+                  setSubmitError('Decision rationale is required by institutional review policy.')
+                  return
+                }
+                setSubmitError(null)
+                setShowConfirmModal(true)
+              }}
+            >
+              {submitError && (
+                <div className="alert alert--error" role="alert" style={{ marginBottom: 'var(--space-3)' }}>
+                  {submitError}
+                </div>
+              )}
 
-            {outcomeSuccess && (
-              <div className="alert alert--success" role="status" aria-live="polite" style={{ marginTop: 'var(--space-3)' }}>
-                ✅ Institutional outcome recorded. Separate audit entry appended.
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label">Review Disposition</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  {(['clear', 'needs_follow_up', 'escalated'] as Disposition[]).map((disp) => (
+                    <label
+                      key={disp}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 'var(--space-2)',
+                        padding: 'var(--space-2) var(--space-3)',
+                        borderRadius: 'var(--radius)',
+                        background: disposition === disp ? 'var(--color-surface-3)' : 'var(--color-surface-2)',
+                        border: `1px solid ${disposition === disp ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="disposition"
+                        value={disp}
+                        checked={disposition === disp}
+                        onChange={() => setDisposition(disp)}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <div>
+                        <div className="font-semibold text-small">{DISPOSITION_LABELS[disp]}</div>
+                        <div className="text-subtle text-xs">{DISPOSITION_DESCRIPTIONS[disp]}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
               </div>
-            )}
 
-            {showAdminPanel && canOutcome && !outcomeSuccess && (
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label" htmlFor="decision-reason">
+                  Required Decision Rationale *
+                </label>
+                <textarea
+                  id="decision-reason"
+                  className="form-textarea"
+                  placeholder="Detail the contextual facts supporting this determination (mandatory)…"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  rows={3}
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
+                <label className="form-label" htmlFor="decision-notes">
+                  Internal Reviewer Notes (Optional)
+                </label>
+                <textarea
+                  id="decision-notes"
+                  className="form-textarea"
+                  placeholder="Follow-up instructions or proctoring context…"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn--primary"
+                style={{ width: '100%' }}
+                disabled={submitting || !reason.trim()}
+              >
+                {submitting ? 'Committing Decision…' : 'Review & Commit Disposition →'}
+              </button>
+            </form>
+          </section>
+
+          {/* Institutional Outcome Panel (Separated Workflow for Administrator) */}
+          <section
+            className="card"
+            aria-labelledby="institutional-outcome-heading"
+            style={{
+              borderColor: canRecordOutcome ? 'var(--color-purple)' : 'var(--color-border)',
+              background: canRecordOutcome ? 'rgba(168, 85, 247, 0.03)' : 'var(--color-surface)',
+            }}
+          >
+            <div className="card-header">
+              <div>
+                <h2 id="institutional-outcome-heading" className="card-title">
+                  Administrator Institutional Outcome
+                </h2>
+                <span className="text-subtle text-xs">Separate institutional governance stage</span>
+              </div>
+              <span className="badge badge--neutral">Administrator Only</span>
+            </div>
+
+            {outcomes.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {outcomes.map((o) => (
+                  <div
+                    key={o.id}
+                    style={{
+                      background: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 'var(--radius)',
+                      padding: 'var(--space-3)',
+                    }}
+                  >
+                    <div className="flex justify-between items-center" style={{ marginBottom: '4px' }}>
+                      <span className="badge badge--low" style={{ textTransform: 'capitalize' }}>
+                        {o.outcome.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-subtle text-xs">v{o.version}</span>
+                    </div>
+                    <p className="text-small font-medium">{o.reason}</p>
+                    <div className="text-subtle text-xs" style={{ marginTop: 'var(--space-2)' }}>
+                      Recorded by {o.administratorId} · {new Date(o.decidedAt).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : !canRecordOutcome ? (
+              <div className="state-empty" style={{ padding: 'var(--space-4)' }}>
+                <p className="text-small text-muted">
+                  Institutional outcome can only be recorded after a reviewer decision has been committed (current state: <strong>{investigation.status}</strong>).
+                </p>
+              </div>
+            ) : activeRole !== 'administrator' ? (
+              <div className="alert alert--warning text-small" style={{ marginBottom: 0 }}>
+                <span>
+                  Switch active role to <strong>Administrator</strong> in the top header to record institutional outcome.
+                </span>
+              </div>
+            ) : (
               <form
-                id={`${formId}-outcome`}
-                onSubmit={handleSubmitOutcome}
-                aria-label="Institutional outcome form"
-                noValidate
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!outcomeReason.trim()) {
+                    setOutcomeError('Outcome justification is required.')
+                    return
+                  }
+                  setOutcomeError(null)
+                  setShowOutcomeConfirmModal(true)
+                }}
               >
                 {outcomeError && (
-                  <div className="alert alert--error" role="alert" style={{ marginBottom: 'var(--space-4)' }}>
-                    ⚠️ {outcomeError}
+                  <div className="alert alert--error" role="alert" style={{ marginBottom: 'var(--space-3)' }}>
+                    {outcomeError}
                   </div>
                 )}
 
                 <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
-                  <label className="form-label" htmlFor={`${formId}-outcome-value`}>
-                    Outcome <span className="form-required" aria-label="required">*</span>
-                  </label>
+                  <label className="form-label">Final Institutional Action</label>
                   <select
-                    id={`${formId}-outcome-value`}
-                    className="form-control"
+                    className="form-select"
                     value={outcomeValue}
                     onChange={(e) => setOutcomeValue(e.target.value as InstitutionalOutcomeValue)}
-                    required
-                    aria-required="true"
                   >
-                    {OUTCOME_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label} — {o.desc}</option>
+                    {OUTCOME_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label} — {opt.desc}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 'var(--space-4)' }}>
-                  <label className="form-label" htmlFor={`${formId}-outcome-reason`}>
-                    Reason <span className="form-required" aria-label="required">*</span>
+                  <label className="form-label" htmlFor="outcome-reason">
+                    Administrative Rationale *
                   </label>
                   <textarea
-                    id={`${formId}-outcome-reason`}
-                    className="form-control"
+                    id="outcome-reason"
+                    className="form-textarea"
+                    placeholder="Reference institutional policy or committee minutes…"
                     value={outcomeReason}
                     onChange={(e) => setOutcomeReason(e.target.value)}
-                    placeholder="Institutional rationale for this outcome…"
+                    rows={2}
                     required
-                    aria-required="true"
-                    rows={3}
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="btn btn--primary"
+                  className="btn btn--secondary"
+                  style={{ width: '100%', borderColor: 'var(--color-purple)', color: 'var(--color-purple)' }}
                   disabled={submittingOutcome || !outcomeReason.trim()}
-                  aria-disabled={submittingOutcome || !outcomeReason.trim()}
-                  id="btn-submit-outcome"
-                  style={{ width: '100%', justifyContent: 'center' }}
                 >
-                  {submittingOutcome ? (
-                    <><span className="spinner" style={{ width: '1rem', height: '1rem' }} aria-hidden="true" /> Recording…</>
-                  ) : (
-                    'Record institutional outcome [DEMO ADMIN]'
-                  )}
+                  {submittingOutcome ? 'Recording Outcome…' : 'Record Institutional Outcome'}
                 </button>
               </form>
             )}
@@ -517,13 +660,89 @@ export function InvestigationPage() {
         </div>
       </div>
 
-      <style>{`
-        @media (max-width: 900px) {
-          .page-container--wide > div > div:last-child {
-            position: static !important;
-          }
-        }
-      `}</style>
+      {/* Confirmation Modal for Review Decision */}
+      {showConfirmModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirm-decision-title">
+          <div className="modal-dialog">
+            <h3 id="confirm-decision-title" style={{ marginBottom: 'var(--space-2)' }}>
+              Confirm Review Disposition: {DISPOSITION_LABELS[disposition]}
+            </h3>
+            <p className="text-small text-muted" style={{ marginBottom: 'var(--space-4)' }}>
+              This will commit the disposition and record a permanent audit entry under <strong>{actorLabel}</strong>.
+            </p>
+
+            <div
+              style={{
+                background: 'var(--color-surface-2)',
+                padding: 'var(--space-3)',
+                borderRadius: 'var(--radius)',
+                fontSize: '0.8125rem',
+                marginBottom: 'var(--space-4)',
+              }}
+            >
+              <div className="font-semibold text-muted text-xs">DOCUMENTED RATIONALE:</div>
+              <div style={{ marginTop: '4px' }}>{reason}</div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <button type="button" className="btn btn--secondary" onClick={() => setShowConfirmModal(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={handleConfirmDecision}
+                disabled={submitting}
+              >
+                {submitting ? 'Committing…' : 'Confirm & Commit Decision'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Institutional Outcome */}
+      {showOutcomeConfirmModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirm-outcome-title">
+          <div className="modal-dialog">
+            <h3 id="confirm-outcome-title" style={{ marginBottom: 'var(--space-2)' }}>
+              Confirm Institutional Outcome
+            </h3>
+            <p className="text-small text-muted" style={{ marginBottom: 'var(--space-4)' }}>
+              Recording this institutional outcome establishes a formal outcome under administrative authority.
+            </p>
+
+            <div
+              style={{
+                background: 'var(--color-surface-2)',
+                padding: 'var(--space-3)',
+                borderRadius: 'var(--radius)',
+                fontSize: '0.8125rem',
+                marginBottom: 'var(--space-4)',
+              }}
+            >
+              <div className="font-semibold text-muted text-xs">OUTCOME:</div>
+              <div style={{ marginTop: '2px', textTransform: 'capitalize' }}>{outcomeValue.replace(/_/g, ' ')}</div>
+              <div className="font-semibold text-muted text-xs" style={{ marginTop: '8px' }}>RATIONALE:</div>
+              <div style={{ marginTop: '2px' }}>{outcomeReason}</div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <button type="button" className="btn btn--secondary" onClick={() => setShowOutcomeConfirmModal(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={handleConfirmOutcome}
+                disabled={submittingOutcome}
+              >
+                {submittingOutcome ? 'Recording…' : 'Confirm & Record Outcome'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

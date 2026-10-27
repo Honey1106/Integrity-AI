@@ -137,4 +137,40 @@ describe('MockIntegrityService', () => {
       ).rejects.toThrow()
     })
   })
+
+  describe('listSignals and triage', () => {
+    it('filters signals by category and priority', async () => {
+      const res = await svc.listSignals({ category: 'focus' })
+      expect(res.items.every((s) => s.category === 'focus')).toBe(true)
+    })
+
+    it('filters signals requiring human review', async () => {
+      const res = await svc.listSignals({ requiresHumanReview: true })
+      expect(res.items.every((s) => s.requiresHumanReview)).toBe(true)
+    })
+  })
+
+  describe('getDashboardStats', () => {
+    it('returns valid aggregated operational metrics', async () => {
+      const stats = await svc.getDashboardStats()
+      expect(stats.totalAssessments).toBeGreaterThan(0)
+      expect(stats.totalSessions).toBeGreaterThan(0)
+      expect(stats.sessionsRequiringReview).toBeGreaterThanOrEqual(0)
+      expect(stats.openInvestigations).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  describe('audit history and investigation lookup', () => {
+    it('returns investigation by session id', async () => {
+      const inv = await svc.getInvestigationBySession('session-001')
+      expect(inv).not.toBeNull()
+      expect(inv!.sessionId).toBe('session-001')
+    })
+
+    it('returns filtered audit entries', async () => {
+      const audit = await svc.getAllAuditEntries({ actorRole: 'system' })
+      expect(audit.items.every((a) => a.actorRole === 'system')).toBe(true)
+    })
+  })
 })
+

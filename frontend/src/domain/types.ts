@@ -147,3 +147,44 @@ export interface AuditEntry {
   after: Record<string, unknown> | null
   schemaVersion: number
 }
+
+export interface DashboardStats {
+  totalAssessments: number
+  totalSessions: number
+  sessionsRequiringReview: number
+  activeSessions: number
+  clearedSessions: number
+  submittedSessions: number
+  openInvestigations: number
+  pendingReviewerDecisions: number
+  recordedOutcomes: number
+  signalsAwaitingTriage: number
+}
+
+export interface SignalFilterParams {
+  category?: SignalCategory | 'all'
+  severity?: SignalSeverity | 'all'
+  requiresHumanReview?: boolean | 'all'
+  sessionId?: string
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
+export interface SessionFilterParams {
+  status?: SessionStatus | 'all'
+  assessmentId?: string | 'all'
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
+export interface AuditFilterParams {
+  targetType?: string | 'all'
+  targetId?: string
+  actorRole?: ActorRole | 'all'
+  search?: string
+  page?: number
+  pageSize?: number
+}
+
